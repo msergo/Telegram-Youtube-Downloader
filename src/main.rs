@@ -1,8 +1,11 @@
 use axum::{Json, Router, routing::get, routing::post};
+use std::env;
 use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::types::TelegramWebhook;
+mod send_audio;
+use send_audio::send_audio_to_telegram;
 
 mod types;
 
@@ -26,7 +29,8 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) -> Json<serde_js
 
     let job_id = Uuid::new_v4();
 
-    let output_file = format!("/downloads/{}.%(ext)s", job_id);
+    let output_file = format!("./downloads/{}.mp3", job_id);
+    let bot_token = env::var("TELEGRAM_BOT_TOKEN").unwrap();
 
     tokio::spawn(async move {
         let status = Command::new("yt-dlp")
@@ -41,8 +45,7 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) -> Json<serde_js
 
         match status {
             Ok(s) if s.success() => {
-                println!("Download complete for job {}", job_id);
-                // Later: send message to Telegram
+                send_audio_to_telegram(payload.message.chat.id, &output_file, &bot_token).await
             }
             Ok(s) => {
                 println!("yt-dlp exited with status: {:?}", s);
