@@ -1,7 +1,6 @@
 use axum::{Json, Router, routing::get, routing::post};
 use std::env;
 use tokio::process::Command;
-use uuid::Uuid;
 
 use crate::types::TelegramWebhook;
 mod send_audio;
@@ -19,20 +18,33 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn download_handler(Json(payload): Json<TelegramWebhook>) -> Json<serde_json::Value> {
+async fn download_handler(Json(payload): Json<TelegramWebhook>) {
     let Some(url) = payload.message.text else {
-        return Json(serde_json::json!({
-            "status": "error",
-            "message": "No URL provided"
-        }));
+        return;
     };
 
-    let job_id = Uuid::new_v4();
-
-    let output_file = format!("./downloads/{}.mp3", job_id);
     let bot_token = env::var("TELEGRAM_BOT_TOKEN").unwrap();
 
     tokio::spawn(async move {
+        // Step 1: Get original video title
+        let output = Command::new("yt-dlp")
+            .arg("--get-title")
+            .arg(&url)
+            .output()
+            .await;
+
+        let Ok(output) = output else {
+            eprintln!("Failed to get title from yt-dlp");
+            return;
+        };
+
+        let title = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .replace('/', "_")
+            .replace('\\', "_");
+
+        let file_name = format!("{}.mp3", title);
+        let output_file = format!("./downloads/{}", file_name);
         let status = Command::new("yt-dlp")
             .arg("-x") // extract audio
             .arg("--audio-format")
@@ -51,11 +63,8 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) -> Json<serde_js
                 println!("yt-dlp exited with status: {:?}", s);
             }
             Err(e) => {
-                println!("Failed to spawn yt-dlp for job {}: {}", job_id, e);
+                println!("Failed to spawn yt-dlp for job {}: {}", file_name, e);
             }
         }
     });
-    Json(serde_json::json!({
-        "job_id": job_id.to_string()
-    }))
 }
