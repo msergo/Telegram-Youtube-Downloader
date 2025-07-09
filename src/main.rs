@@ -19,6 +19,17 @@ async fn main() {
 }
 
 async fn download_handler(Json(payload): Json<TelegramWebhook>) {
+    // Check if the message is from the allowed user
+    let allowed_user_id: i64 = env::var("ALLOWED_USER_ID")
+        .expect("ALLOWED_USER_ID must be set")
+        .parse()
+        .expect("ALLOWED_USER_ID must be a valid integer");
+
+    if payload.message.from.id != allowed_user_id {
+        println!("Unauthorized user: {}", payload.message.from.id);
+        return;
+    }
+
     let Some(url) = payload.message.text else {
         return;
     };

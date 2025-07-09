@@ -8,10 +8,16 @@ pub struct TelegramWebhook {
 #[derive(Debug, Deserialize)]
 pub struct TelegramMessage {
     pub chat: TelegramChat,
-    pub text: Option<String>, // Text might be missing (e.g., photo messages)
+    pub from: TelegramFrom,
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct TelegramChat {
+    pub id: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TelegramFrom {
     pub id: i64,
 }
