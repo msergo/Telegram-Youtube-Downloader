@@ -40,7 +40,7 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
         // Step 1: Get original video title
         let output = Command::new("yt-dlp")
             .arg("--get-title")
-            .arg("--6")
+            .arg("-4")
             .arg("-v")
             .arg(&url)
             .output()
@@ -59,7 +59,7 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
         let file_name = format!("{}.mp3", title);
         let output_file = format!("./downloads/{}", file_name);
         let status = Command::new("yt-dlp")
-            .arg("--6")
+            .arg("-4")
             .arg("-v")
             .arg("-x") // extract audio
             .arg("--audio-format")
