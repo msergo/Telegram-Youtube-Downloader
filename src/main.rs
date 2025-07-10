@@ -42,6 +42,8 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
             .arg("--get-title")
             .arg("-4")
             .arg("-v")
+            .stderr(std::process::Stdio::null()) // suppress stderr
+            .stdout(std::process::Stdio::null()) // optionally suppress stdout too
             .arg(&url)
             .output()
             .await;
