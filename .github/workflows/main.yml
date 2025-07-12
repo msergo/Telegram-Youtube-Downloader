@@ -21,7 +21,6 @@ jobs:
         run: |
           VERSION="build-$(date +%s)"
           git tag $VERSION
-          git push origin $VERSION
           echo "tag=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Upload release binary
