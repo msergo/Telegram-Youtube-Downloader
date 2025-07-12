@@ -27,4 +27,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.create_tag.outputs.tag }}
-          files: target/release/<your-binary-name>
+          files: target/release/yt_dl_service
