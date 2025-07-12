@@ -13,11 +13,8 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Cross
-        run: cargo install cross
-
       - name: Build binary
-        run: cross build --release --target x86_64-unknown-linux-gnu
+        run: cargo build --release
 
       - name: Create tag from commit
         id: create_tag
