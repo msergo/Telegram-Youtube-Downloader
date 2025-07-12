@@ -1,2 +1,6 @@
 /target
 docker-compose.yml
+/downloads/*
+# keep the downloads directory clean
+!.gitkeep
+.env
