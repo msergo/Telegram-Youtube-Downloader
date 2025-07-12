@@ -1,4 +1,5 @@
 use axum::{Json, Router, routing::get, routing::post};
+use serde_json::Value;
 use std::env;
 use tokio::process::Command;
 
@@ -37,28 +38,36 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
     let bot_token = env::var("TELEGRAM_BOT_TOKEN").unwrap();
 
     tokio::spawn(async move {
-        // Step 1: Get original video title
+        // Step 1: get metadata
         let output = Command::new("yt-dlp")
-            .arg("--get-title")
+            .arg("-j")
             .arg("-6")
-            .arg("-v")
-            .stderr(std::process::Stdio::null()) // suppress stderr
-            .stdout(std::process::Stdio::null()) // optionally suppress stdout too
             .arg(&url)
             .output()
             .await;
 
-        let Ok(output) = output else {
-            eprintln!("Failed to get title from yt-dlp");
-            return;
-        };
+        let metadata: Option<Value> = output
+            .ok()
+            .and_then(|out| serde_json::from_slice(&out.stdout).ok());
 
-        let title = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .replace('/', "_")
-            .replace('\\', "_");
+        let artist = metadata
+            .as_ref()
+            .and_then(|m| m.get("artist"))
+            .and_then(|a| a.as_str())
+            .unwrap_or("Unknown Artist")
+            .to_string();
 
-        let file_name = format!("{}.mp3", title);
+        let title = metadata
+            .as_ref()
+            .and_then(|m| m.get("title"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("Untitled")
+            .to_string();
+
+        let file_name = format!("{} - {}.mp3", artist, title)
+            .replace('/', "_") // replace slashes to avoid directory issues
+            .replace('\\', "_"); // replace backslashes to avoid directory issues
+
         let output_file = format!("./downloads/{}", file_name);
         let status = Command::new("yt-dlp")
             .arg("-6")
