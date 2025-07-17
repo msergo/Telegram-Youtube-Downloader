@@ -1,0 +1,15 @@
+# yt_dl_service.service
+[Unit]
+Description=YouTube DL Telegram Bot
+After=network.target
+
+[Service]
+ExecStart=/opt/yt_dl_service/yt_dl_service
+WorkingDirectory=/opt/yt_dl_service
+Restart=always
+RestartSec=5
+Environment=RUST_LOG=info
+EnvironmentFile=/opt/yt_dl_service/.env
+
+[Install]
+WantedBy=multi-user.target
