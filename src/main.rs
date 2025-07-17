@@ -1,9 +1,9 @@
+use crate::types::TelegramWebhook;
 use axum::{Json, Router, routing::get, routing::post};
+use dotenv::dotenv;
 use serde_json::Value;
 use std::env;
 use tokio::process::Command;
-
-use crate::types::TelegramWebhook;
 mod send_audio;
 use send_audio::send_audio_to_telegram;
 
@@ -20,6 +20,7 @@ async fn main() {
 }
 
 async fn download_handler(Json(payload): Json<TelegramWebhook>) {
+    dotenv().ok();
     // Check if the message is from the allowed user
     let allowed_user_id: i64 = env::var("ALLOWED_USER_ID")
         .expect("ALLOWED_USER_ID must be set")

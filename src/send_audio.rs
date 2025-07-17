@@ -32,6 +32,8 @@ pub async fn send_audio_to_telegram(chat_id: i64, path: &str, bot_token: &str) {
     match client.post(&url).multipart(form).send().await {
         Ok(res) if res.status().is_success() => {
             println!("Audio sent successfully to Telegram.");
+            let _ = tokio::fs::remove_file(&path).await;
+            println!("Deleted file: {}", path);
         }
         Ok(res) => {
             let status = res.status();
