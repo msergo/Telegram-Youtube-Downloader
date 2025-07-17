@@ -5,16 +5,20 @@ use serde_json::Value;
 use std::env;
 use tokio::process::Command;
 mod send_audio;
+use log::{error, info, warn};
 use send_audio::send_audio_to_telegram;
 
 mod types;
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     let app = Router::new()
         .route("/", get(|| async { "OK" }))
         .route("/webhook", post(download_handler));
 
+    info!("YT DL Service starting...");
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -28,13 +32,15 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
         .expect("ALLOWED_USER_ID must be a valid integer");
 
     if payload.message.from.id != allowed_user_id {
-        println!("Unauthorized user: {}", payload.message.from.id);
+        warn!("Unauthorized user: {}", payload.message.from.id);
         return;
     }
 
     let Some(url) = payload.message.text else {
         return;
     };
+
+    info!("Received download request for URL: {}", url);
 
     let bot_token = env::var("TELEGRAM_BOT_TOKEN").unwrap();
 
@@ -87,10 +93,10 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
                 send_audio_to_telegram(payload.message.chat.id, &output_file, &bot_token).await
             }
             Ok(s) => {
-                println!("yt-dlp exited with status: {:?}", s);
+                warn!("yt-dlp exited with status: {:?}", s);
             }
             Err(e) => {
-                println!("Failed to spawn yt-dlp for job {}: {}", file_name, e);
+                error!("Failed to spawn yt-dlp for job {}: {}", file_name, e);
             }
         }
     });

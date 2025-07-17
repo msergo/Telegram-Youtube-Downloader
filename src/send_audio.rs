@@ -1,3 +1,4 @@
+use log::{error, info};
 use reqwest::{Client, multipart};
 use std::path::Path;
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -31,17 +32,17 @@ pub async fn send_audio_to_telegram(chat_id: i64, path: &str, bot_token: &str) {
 
     match client.post(&url).multipart(form).send().await {
         Ok(res) if res.status().is_success() => {
-            println!("Audio sent successfully to Telegram.");
+            info!("Audio sent successfully to Telegram.");
             let _ = tokio::fs::remove_file(&path).await;
-            println!("Deleted file: {}", path);
+            info!("Deleted file: {}", path);
         }
         Ok(res) => {
             let status = res.status();
             let body = res.text().await.unwrap_or_else(|_| "Unknown error".into());
-            eprintln!("Telegram API error {}: {}", status, body);
+            error!("Telegram API error {}: {}", status, body);
         }
         Err(e) => {
-            eprintln!("Failed to send audio: {}", e);
+            error!("Failed to send audio: {}", e);
         }
     }
 }
