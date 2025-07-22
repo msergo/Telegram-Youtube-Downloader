@@ -78,6 +78,7 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
         let output_file = format!("./downloads/{}", file_name);
         let status = Command::new("yt-dlp")
             .arg("-6")
+            .arg("--no-playlist")
             .arg("-v")
             .arg("-x") // extract audio
             .arg("--audio-format")
