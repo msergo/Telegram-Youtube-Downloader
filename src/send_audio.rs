@@ -3,7 +3,7 @@ use reqwest::{Client, multipart};
 use std::path::Path;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
-pub async fn send_audio_to_telegram(chat_id: i64, path: &str, bot_token: &str) {
+pub async fn send_audio_to_telegram(chat_id: i64, path: &str, performer: &str, title: &str, bot_token: &str) {
     let client = Client::new();
     let url = format!("https://api.telegram.org/bot{}/sendAudio", bot_token);
 
@@ -25,6 +25,8 @@ pub async fn send_audio_to_telegram(chat_id: i64, path: &str, bot_token: &str) {
 
     let form = multipart::Form::new()
         .text("chat_id", chat_id.to_string())
+        .text("performer", performer.to_string())
+        .text("title", title.to_string())
         .part(
             "audio",
             multipart::Part::stream(file_body).file_name(file_name),

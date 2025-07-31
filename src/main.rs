@@ -57,11 +57,11 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
             .ok()
             .and_then(|out| serde_json::from_slice(&out.stdout).ok());
 
-        let artist = metadata
+        let performer = metadata
             .as_ref()
             .and_then(|m| m.get("artist"))
             .and_then(|a| a.as_str())
-            .unwrap_or("Unknown Artist")
+            .unwrap_or("")
             .to_string();
 
         let title = metadata
@@ -71,9 +71,14 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
             .unwrap_or("Untitled")
             .to_string();
 
-        let file_name = format!("{} - {}.mp3", artist, title)
-            .replace('/', "_") // replace slashes to avoid directory issues
-            .replace('\\', "_"); // replace backslashes to avoid directory issues
+        // if artist is unknown, do not use it in the file name
+        let file_name = if performer.is_empty() {
+            format!("{}.mp3", title.replace('/', "_").replace('\\', "_"))
+        } else {
+            format!("{} - {}.mp3", performer, title)
+                .replace('/', "_") // replace slashes to avoid directory issues
+                .replace('\\', "_") // replace backslashes to avoid directory issues
+        };
 
         let output_file = format!("./downloads/{}", file_name);
         let status = Command::new("yt-dlp")
@@ -91,7 +96,7 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
 
         match status {
             Ok(s) if s.success() => {
-                send_audio_to_telegram(payload.message.chat.id, &output_file, &bot_token).await
+                send_audio_to_telegram(payload.message.chat.id, &output_file, &performer, &title, &bot_token).await
             }
             Ok(s) => {
                 warn!("yt-dlp exited with status: {:?}", s);
