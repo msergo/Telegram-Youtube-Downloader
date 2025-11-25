@@ -49,6 +49,7 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
         let output = Command::new("yt-dlp")
             .arg("-j")
             .arg("-6")
+            .arg("--no-playlist")
             .arg(&url)
             .output()
             .await;
@@ -96,7 +97,14 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
 
         match status {
             Ok(s) if s.success() => {
-                send_audio_to_telegram(payload.message.chat.id, &output_file, &performer, &title, &bot_token).await
+                send_audio_to_telegram(
+                    payload.message.chat.id,
+                    &output_file,
+                    &performer,
+                    &title,
+                    &bot_token,
+                )
+                .await
             }
             Ok(s) => {
                 warn!("yt-dlp exited with status: {:?}", s);
