@@ -8,6 +8,7 @@ mod send_audio;
 use log::{error, info, warn};
 use send_audio::send_audio_to_telegram;
 
+mod chunk_audio;
 mod types;
 
 #[tokio::main]
@@ -74,11 +75,9 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
 
         // if artist is unknown, do not use it in the file name
         let file_name = if performer.is_empty() {
-            format!("{}.mp3", title.replace('/', "_").replace('\\', "_"))
+            format!("{}.mp3", title.replace(['/', '\\'], "_"))
         } else {
-            format!("{} - {}.mp3", performer, title)
-                .replace('/', "_") // replace slashes to avoid directory issues
-                .replace('\\', "_") // replace backslashes to avoid directory issues
+            format!("{} - {}.mp3", performer, title).replace(['/', '\\'], "_") // replace slashes and backslashes to avoid directory issues
         };
 
         let output_file = format!("./downloads/{}", file_name);
