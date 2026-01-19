@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
 
 /// Metadata about a single chunk
 #[derive(Debug, Clone)]
@@ -43,6 +43,49 @@ impl From<String> for ChunkError {
 
 /// The target size for each chunk (49MB to stay under Telegram's 50MB limit)
 const CHUNK_SIZE: u64 = 49 * 1024 * 1024; // 49MB
+
+/// Find the next MP3 frame sync marker (0xFFF) after a given position
+/// Returns the byte offset of the frame header, or None if not found
+/// Searches backwards from target position to find a safe split point
+async fn find_next_frame_sync(
+    file: &mut fs::File,
+    target_pos: u64,
+    max_search: u64,
+) -> Result<Option<u64>, ChunkError> {
+    // Search backwards from target to find the last valid frame before target
+    let search_start = target_pos.saturating_sub(max_search);
+    let mut buffer = vec![0u8; 4096];
+    let mut last_frame_pos: Option<u64> = None;
+    let mut current_pos = search_start;
+
+    file.seek(std::io::SeekFrom::Start(search_start)).await?;
+
+    while current_pos < target_pos {
+        let remaining = (target_pos - current_pos).min(4096);
+        let n = file.read(&mut buffer[..remaining as usize]).await?;
+        if n == 0 {
+            break;
+        }
+
+        // Look for MP3 frame sync marker (0xFFF with specific bits set)
+        // Search through the buffer, allowing for boundary overlap
+        for i in 0..n.saturating_sub(1) {
+            if buffer[i] == 0xFF && (buffer[i + 1] & 0xE0) == 0xE0 {
+                last_frame_pos = Some(current_pos + i as u64);
+            }
+        }
+
+        // Move back 1 byte to catch patterns spanning buffer boundaries
+        current_pos += n.saturating_sub(1) as u64;
+        if n > 1 {
+            file.seek(std::io::SeekFrom::Start(current_pos)).await?;
+        } else {
+            current_pos += 1;
+        }
+    }
+
+    Ok(last_frame_pos)
+}
 
 /// Check if a file needs to be split
 pub fn needs_chunking(file_size: u64) -> bool {
@@ -90,31 +133,44 @@ pub async fn split_mp3(file_path: &str) -> Result<Vec<ChunkInfo>, ChunkError> {
         let chunk_path = parent_dir.join(format!("{}_{}.{}", chunk_index, file_stem, extension));
 
         let mut output_file = fs::File::create(&chunk_path).await?;
-        let mut buffer = vec![0u8; CHUNK_SIZE as usize];
-        let bytes_to_read = std::cmp::min(CHUNK_SIZE, total_size - bytes_read);
 
-        let n = input_file
-            .read_exact(&mut buffer[..bytes_to_read as usize])
-            .await
-            .or_else(|e| {
-                if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    Ok(bytes_to_read as usize)
-                } else {
-                    Err(e)
-                }
-            })?;
+        // Calculate target end position for this chunk
+        let target_end = std::cmp::min(bytes_read + CHUNK_SIZE, total_size);
 
-        output_file.write_all(&buffer[..n]).await?;
+        // Find the last valid MP3 frame before the target end position
+        // Search backwards up to 10KB to find a frame boundary
+        let actual_end = match find_next_frame_sync(&mut input_file, target_end, 10 * 1024).await? {
+            Some(frame_pos) if frame_pos > bytes_read => frame_pos,
+            _ => {
+                // If no frame found in search window or frame is at/before start,
+                // use target_end for last chunk or small files
+                target_end
+            }
+        };
+
+        // If we've reached the end of file, use total_size
+        let actual_end = std::cmp::min(actual_end, total_size);
+        let chunk_size = actual_end - bytes_read;
+
+        if chunk_size == 0 {
+            // Avoid creating empty chunks
+            break;
+        }
+
+        // Read and write the chunk
+        input_file.seek(std::io::SeekFrom::Start(bytes_read)).await?;
+        let mut buffer = vec![0u8; chunk_size as usize];
+        input_file.read_exact(&mut buffer).await?;
+        output_file.write_all(&buffer).await?;
         output_file.sync_all().await?;
 
-        let chunk_size = n as u64;
         chunks.push(ChunkInfo {
             path: chunk_path,
             index: chunk_index,
             size: chunk_size,
         });
 
-        bytes_read += chunk_size;
+        bytes_read = actual_end;
         chunk_index += 1;
     }
 
