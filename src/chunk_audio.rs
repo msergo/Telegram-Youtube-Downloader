@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 /// Metadata about a single chunk
 #[derive(Debug, Clone)]
@@ -70,8 +70,21 @@ async fn find_next_frame_sync(
         // Look for MP3 frame sync marker (0xFFF with specific bits set)
         // Search through the buffer, allowing for boundary overlap
         for i in 0..n.saturating_sub(1) {
+            // Check for valid MP3 frame header: 0xFF followed by byte with bits 7,6,5 set
             if buffer[i] == 0xFF && (buffer[i + 1] & 0xE0) == 0xE0 {
-                last_frame_pos = Some(current_pos + i as u64);
+                // Additional validation: ensure this looks like a reasonable frame
+                // Check that we have enough data for basic frame validation
+                if i + 3 < n {
+                    // MPEG version (bits 4-3 of second byte should not be 01 which is reserved)
+                    let version_bits = (buffer[i + 1] >> 3) & 0x03;
+                    if version_bits != 0x01 {
+                        // Not reserved
+                        last_frame_pos = Some(current_pos + i as u64);
+                    }
+                } else {
+                    // If we can't validate further, still accept it but prefer validated ones
+                    last_frame_pos = Some(current_pos + i as u64);
+                }
             }
         }
 
@@ -130,26 +143,35 @@ pub async fn split_mp3(file_path: &str) -> Result<Vec<ChunkInfo>, ChunkError> {
     let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
 
     while bytes_read < total_size {
-        let chunk_path = parent_dir.join(format!("{}_{}.{}", chunk_index, file_stem, extension));
-
-        let mut output_file = fs::File::create(&chunk_path).await?;
-
         // Calculate target end position for this chunk
         let target_end = std::cmp::min(bytes_read + CHUNK_SIZE, total_size);
 
+        // If this is the last chunk, just use the target end (no need for frame boundary)
+        let is_last_chunk = target_end == total_size;
+
         // Find the last valid MP3 frame before the target end position
-        // Search backwards up to 10KB to find a frame boundary
-        let actual_end = match find_next_frame_sync(&mut input_file, target_end, 10 * 1024).await? {
-            Some(frame_pos) if frame_pos > bytes_read => frame_pos,
-            _ => {
-                // If no frame found in search window or frame is at/before start,
-                // use target_end for last chunk or small files
-                target_end
+        // Only search for frame boundaries if it's not the last chunk
+        // This prevents creating tiny final chunks
+        let actual_end = if is_last_chunk {
+            target_end
+        } else {
+            match find_next_frame_sync(&mut input_file, target_end, 10 * 1024).await? {
+                Some(frame_pos)
+                    if frame_pos > bytes_read
+                        && (target_end - frame_pos) < 2 * 1024 * 1024
+                        && (frame_pos - bytes_read) > 1024 * 1024
+                        && (target_end - frame_pos) >= 4 =>
+                {
+                    // Only use frame_pos if:
+                    // 1. It doesn't move the split back more than 2MB
+                    // 2. The resulting chunk would be at least 1MB
+                    // 3. It doesn't cut off less than 4 bytes (avoids tiny adjustments)
+                    frame_pos
+                }
+                _ => target_end,
             }
         };
 
-        // If we've reached the end of file, use total_size
-        let actual_end = std::cmp::min(actual_end, total_size);
         let chunk_size = actual_end - bytes_read;
 
         if chunk_size == 0 {
@@ -157,8 +179,13 @@ pub async fn split_mp3(file_path: &str) -> Result<Vec<ChunkInfo>, ChunkError> {
             break;
         }
 
+        let chunk_path = parent_dir.join(format!("{}_{}.{}", chunk_index, file_stem, extension));
+        let mut output_file = fs::File::create(&chunk_path).await?;
+
         // Read and write the chunk
-        input_file.seek(std::io::SeekFrom::Start(bytes_read)).await?;
+        input_file
+            .seek(std::io::SeekFrom::Start(bytes_read))
+            .await?;
         let mut buffer = vec![0u8; chunk_size as usize];
         input_file.read_exact(&mut buffer).await?;
         output_file.write_all(&buffer).await?;
