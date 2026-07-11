@@ -4,6 +4,9 @@ on:
   push:
     branches: [master]
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -16,18 +19,31 @@ jobs:
       - name: Install Cross
         run: cargo install cross
 
+      - name: Read Rust package version
+        id: package_version
+        run: |
+          VERSION=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[0].version')
+          TAG="v${VERSION}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Check release tag does not already exist
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.package_version.outputs.tag }}"; then
+            echo "Release tag ${{ steps.package_version.outputs.tag }} already exists. Bump Cargo.toml before releasing."
+            exit 1
+          fi
+
       - name: Build binary
         run: cross build --release --target x86_64-unknown-linux-musl
 
-      - name: Create tag from commit
-        id: create_tag
-        run: |
-          VERSION="build-$(date +%s)"
-          git tag $VERSION
-          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+      - name: Prepare versioned release artifact
+        run: cp target/x86_64-unknown-linux-musl/release/yt_dl_service target/x86_64-unknown-linux-musl/release/yt_dl_service-${{ steps.package_version.outputs.version }}-x86_64-unknown-linux-musl
 
       - name: Upload release binary
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.create_tag.outputs.tag }}
-          files: target/x86_64-unknown-linux-musl/release/yt_dl_service
+          tag_name: ${{ steps.package_version.outputs.tag }}
+          name: yt_dl_service ${{ steps.package_version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          files: target/x86_64-unknown-linux-musl/release/yt_dl_service-${{ steps.package_version.outputs.version }}-x86_64-unknown-linux-musl

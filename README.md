@@ -22,8 +22,23 @@ Can be run as a service, config example in `systemd_config` folder
 
 ## Development
 
-- External dependency on `yt-dlp` and `ffmpeg` available in the environment.
-- Logs child process output with timestamps and severity levels.
+The service shells out to command-line tools at runtime. When running directly on the host machine, install these first and make sure they are available on `PATH`:
+
+- `yt-dlp`
+- `ffmpeg`
+
+The service writes downloaded audio files under `./downloads`, so create that directory before running locally:
+
+```sh
+mkdir -p downloads
+```
+
+Required environment variables:
+
+- `TELEGRAM_BOT_TOKEN`
+- `ALLOWED_USER_ID`
+
+Logs include child process output with timestamps and severity levels.
 
 ---
 

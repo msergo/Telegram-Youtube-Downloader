@@ -1,32 +1,31 @@
-FROM rust:1.88 as builder
+FROM rust:1.88 AS builder
 
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
-# Prebuild dependencies for caching
-RUN cargo build --release
+RUN cargo build --locked --release
 
-# 2️⃣ Create final runtime image with yt-dlp and ffmpeg
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runtime
 
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    curl \
-    ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install yt-dlp (python-free binary version)
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
- && chmod +x /usr/local/bin/yt-dlp
+RUN curl --fail --location --show-error \
+        https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
+        --output /usr/local/bin/yt-dlp \
+    && chmod +x /usr/local/bin/yt-dlp
 
-# Copy compiled Rust binary from builder
 COPY --from=builder /app/target/release/yt_dl_service /usr/local/bin/yt_dl_service
 
-WORKDIR /downloads
+WORKDIR /app
+RUN mkdir -p downloads
 
 EXPOSE 3000
 
-# Run the server
 CMD ["yt_dl_service"]
