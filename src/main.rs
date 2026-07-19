@@ -11,6 +11,17 @@ use send_audio::send_audio_to_telegram;
 mod chunk_audio;
 mod types;
 
+fn env_bool_or_default(name: &str, default: bool) -> bool {
+    env::var(name)
+        .ok()
+        .and_then(|value| match value.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" | "y" | "on" => Some(true),
+            "false" | "0" | "no" | "n" | "off" => Some(false),
+            _ => None,
+        })
+        .unwrap_or(default)
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -44,12 +55,16 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
     info!("Received download request for URL: {}", url);
 
     let bot_token = env::var("TELEGRAM_BOT_TOKEN").unwrap();
+    let force_ipv6 = env_bool_or_default("USE_IPV6", true);
 
     tokio::spawn(async move {
         // Step 1: get metadata
-        let output = Command::new("yt-dlp")
-            .arg("-j")
-            .arg("-6")
+        let mut metadata_command = Command::new("yt-dlp");
+        metadata_command.arg("-j");
+        if force_ipv6 {
+            metadata_command.arg("-6");
+        }
+        let output = metadata_command
             .arg("--no-playlist")
             .arg(&url)
             .output()
@@ -81,8 +96,11 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
         };
 
         let output_file = format!("./downloads/{}", file_name);
-        let status = Command::new("yt-dlp")
-            .arg("-6")
+        let mut download_command = Command::new("yt-dlp");
+        if force_ipv6 {
+            download_command.arg("-6");
+        }
+        let status = download_command
             .arg("--no-playlist")
             .arg("-v")
             .arg("-x") // extract audio
