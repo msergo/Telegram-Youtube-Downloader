@@ -9,7 +9,9 @@ use log::{error, info, warn};
 use send_audio::send_audio_to_telegram;
 
 mod chunk_audio;
+mod telegram_status;
 mod types;
+use telegram_status::TelegramStatusMessage;
 
 fn env_bool_or_default(name: &str, default: bool) -> bool {
     env::var(name)
@@ -58,6 +60,9 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
     let force_ipv6 = env_bool_or_default("USE_IPV6", true);
 
     tokio::spawn(async move {
+        let status =
+            TelegramStatusMessage::create(payload.message.chat.id, &bot_token, "Starting...").await;
+
         // Step 1: get metadata
         let mut metadata_command = Command::new("yt-dlp");
         metadata_command.arg("-j");
@@ -100,7 +105,8 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
         if force_ipv6 {
             download_command.arg("-6");
         }
-        let status = download_command
+        status.update("Downloading and converting...").await;
+        let download_status = download_command
             .arg("--no-playlist")
             .arg("-v")
             .arg("-x") // extract audio
@@ -112,7 +118,7 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
             .status()
             .await;
 
-        match status {
+        match download_status {
             Ok(s) if s.success() => {
                 send_audio_to_telegram(
                     payload.message.chat.id,
@@ -121,13 +127,19 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
                     &title,
                     &bot_token,
                 )
-                .await
+                .await;
+
+                // This marks completion of the background workflow and upload
+                // attempts; send_audio_to_telegram does not confirm delivery.
+                status.update("Download completed").await;
             }
             Ok(s) => {
                 warn!("yt-dlp exited with status: {:?}", s);
+                status.update("Download failed").await;
             }
             Err(e) => {
                 error!("Failed to spawn yt-dlp for job {}: {}", file_name, e);
+                status.update("Download failed").await;
             }
         }
     });
