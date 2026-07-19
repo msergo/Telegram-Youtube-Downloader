@@ -1,6 +1,6 @@
 [package]
 name = "yt_dl_service"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2024"
 
 [dependencies]
@@ -10,6 +10,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
+    "json",
     "multipart",
     "stream",
 ] }
@@ -20,3 +21,4 @@ env_logger = "0.11"
 
 [dev-dependencies]
 tempfile = "3.8"
+wiremock = "0.6"
