@@ -131,7 +131,7 @@ async fn download_handler(Json(payload): Json<TelegramWebhook>) {
 
                 // This marks completion of the background workflow and upload
                 // attempts; send_audio_to_telegram does not confirm delivery.
-                status.update("Download completed").await;
+                status.delete().await;
             }
             Ok(s) => {
                 warn!("yt-dlp exited with status: {:?}", s);

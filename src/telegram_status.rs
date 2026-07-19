@@ -23,6 +23,12 @@ struct EditMessageTextRequest<'a> {
     text: &'a str,
 }
 
+#[derive(serde::Serialize)]
+struct DeleteMessageRequest {
+    chat_id: i64,
+    message_id: i64,
+}
+
 #[derive(serde::Deserialize)]
 struct TelegramApiResponse<T> {
     ok: bool,
@@ -198,6 +204,64 @@ impl TelegramStatusMessage {
         }
     }
 
+    pub(crate) async fn delete(&self) {
+        let Some(message_id) = self.message_id else {
+            return;
+        };
+
+        let request = DeleteMessageRequest {
+            chat_id: self.chat_id,
+            message_id,
+        };
+
+        let response = match self
+            .client
+            .post(self.endpoint("deleteMessage"))
+            .json(&request)
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                error!("Failed to delete Telegram status message: {}", error);
+                return;
+            }
+        };
+
+        if !response.status().is_success() {
+            warn!(
+                "Telegram status message deletion returned HTTP status {}",
+                response.status()
+            );
+            return;
+        }
+
+        let body = match response.json::<TelegramApiResponse<bool>>().await {
+            Ok(body) => body,
+            Err(error) => {
+                error!(
+                    "Failed to decode Telegram status deletion response: {}",
+                    error
+                );
+                return;
+            }
+        };
+
+        if !body.ok {
+            warn!(
+                "Telegram status message deletion failed: {}",
+                body.description
+                    .as_deref()
+                    .unwrap_or("missing API description")
+            );
+            return;
+        }
+
+        if body.result != Some(true) {
+            warn!("Telegram status message deletion response did not confirm deletion");
+        }
+    }
+
     fn endpoint(&self, method: &str) -> String {
         format!("{}/bot{}/{}", self.api_base_url, self.bot_token, method)
     }
@@ -228,6 +292,13 @@ mod tests {
             "result": {
                 "message_id": 42
             }
+        }))
+    }
+
+    fn successful_delete() -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(json!({
+            "ok": true,
+            "result": true
         }))
     }
 
@@ -465,6 +536,69 @@ mod tests {
 
         let status = create_status(&server).await;
         status.update("Download completed").await;
+    }
+
+    #[tokio::test]
+    async fn delete_posts_delete_message_with_stored_message_id() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/botTEST_TOKEN/sendMessage"))
+            .respond_with(successful_message(42))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/botTEST_TOKEN/deleteMessage"))
+            .and(body_json(json!({
+                "chat_id": CHAT_ID,
+                "message_id": 42
+            })))
+            .respond_with(successful_delete())
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let status = create_status(&server).await;
+        status.delete().await;
+    }
+
+    #[tokio::test]
+    async fn delete_on_disabled_handle_sends_no_http_request() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/botTEST_TOKEN/sendMessage"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let status = create_status(&server).await;
+        status.delete().await;
+
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn delete_failure_returns_normally() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/botTEST_TOKEN/sendMessage"))
+            .respond_with(successful_message(42))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/botTEST_TOKEN/deleteMessage"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let status = create_status(&server).await;
+        status.delete().await;
     }
 
     #[tokio::test]
