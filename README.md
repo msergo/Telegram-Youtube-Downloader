@@ -24,7 +24,13 @@ Can be run as a service, config example in `systemd_config` folder
 
 The service shells out to command-line tools at runtime. When running directly on the host machine, install these first and make sure they are available on `PATH`:
 
-- `ffmpeg`
+- `yt-dlp`
+- `ffmpeg` with the `libmp3lame` encoder
+- `ffprobe` (normally included with FFmpeg)
+
+Original MP3s up to **50,000,000 bytes** are sent unchanged, without media probing or re-encoding. Larger files are re-encoded in a single FFmpeg pass into chronological MP3 parts at **192 kbit/s**. Every part must be nonempty, independently decodable, and at most **49,000,000 bytes** before uploads begin. Splitting failure preserves the original and makes no upload attempt.
+
+Large files require extra CPU and temporary disk space for encoding. The source is decoded once; completed parts are checked for size and MP3 metadata before uploading.
 
 The service writes downloaded audio files under `./downloads`, so create that directory before running locally:
 
